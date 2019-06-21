@@ -81,7 +81,6 @@ Character Set -> Use Unicode. Thanks! - Javidx9
 #include <thread>
 #include <atomic>
 #include <condition_variable>
-using namespace std;
 
 #include <windows.h>
 
@@ -321,6 +320,8 @@ public:
 		m_bufScreen = new CHAR_INFO[m_nScreenWidth * m_nScreenHeight];
 		memset(m_bufScreen, 0, sizeof(CHAR_INFO) * m_nScreenWidth * m_nScreenHeight);
 
+		SetConsoleCtrlHandler((PHANDLER_ROUTINE)CloseHandler, TRUE);
+
 		return 1;
 	}
 
@@ -365,61 +366,6 @@ public:
 			y = 0;
 		if (y >= m_nScreenHeight)
 			y = m_nScreenHeight;
-	}
-
-	void DrawSprite(int x, int y, TemplateSprite* sprite) {
-		if (sprite == nullptr)
-			return;
-
-		for (int i = 0; i < sprite->nWidth; i++)
-			for (int j = 0; j < sprite->nHeight; j++)
-				if (sprite->GetGlyphs(i, j) != L' ')
-					Draw(x + i, y + j, sprite->GetGlyphs(i, j), sprite->GetColour(i, j));
-	}
-
-	void DrawPartialSprite(int x, int y, TemplateSprite* sprite, int ox, int oy, int w, int h) {
-		if (sprite == nullptr)
-			return;
-
-		for (int i = 0; i < w; i++)
-			for (int j = 0; j < h; j++)
-				if (sprite->GetGlyphs(i + ox, j + oy) != L' ')
-					Draw(x + i, y + j, sprite->GetGlyphs(i + ox, j + oy), sprite->GetColour(i + ox, j + oy));
-	}
-
-	void DrawWireFrameModel(const vector<pair<float, float>>& vecModelCoordinates, float x, float y, float r = 0.0f, float s = 1.0f, short col = FG_WHITE) {
-		// pair.first = x coordinate
-		// pair.second = y coordinate
-
-		// Create translated model vector of coordinate pair
-		vector<pair<float, float>> vecTransformedCoordinates;
-		int verts = vecModelCoordinates.size();
-		vecTransformedCoordinates.resize(verts);
-
-		// Rotate
-		for (int i = 0; i < verts; i++) {
-			vecTransformedCoordinates[i].first = vecModelCoordinates[i].first * cosf(r) - vecModelCoordinates[i].second * sinf(r);
-			vecTransformedCoordinates[i].second = vecModelCoordinates[i].first * sinf(r) + vecModelCoordinates[i].second * cosf(r);
-		}
-
-		// Scale
-		for (int i = 0; i < verts; i++) {
-			vecTransformedCoordinates[i].first = vecTransformedCoordinates[i].first * s;
-			vecTransformedCoordinates[i].second = vecTransformedCoordinates[i].second * s;
-		}
-
-		// Translate
-		for (int i = 0; i < verts; i++) {
-			vecTransformedCoordinates[i].first = vecTransformedCoordinates[i].first + x;
-			vecTransformedCoordinates[i].second = vecTransformedCoordinates[i].second + y;
-		}
-
-		// Draw Closed Polygon
-		for (int i = 0; i < verts + 1; i++) {
-			int j = (i + 1);
-			DrawLine((int)vecTransformedCoordinates[i % verts].first, (int)vecTransformedCoordinates[i % verts].second,
-				(int)vecTransformedCoordinates[j % verts].first, (int)vecTransformedCoordinates[j % verts].second, PIXEL_SOLID, col);
-		}
 	}
 
 	void DrawLine(int x1, int y1, int x2, int y2, wchar_t c = 0x2588, short col = 0x000F) {
@@ -488,6 +434,110 @@ public:
 
 				Draw(x, y, c, col);
 			}
+		}
+	}
+
+	void DrawCircle(int xc, int yc, int r, short c = 0x2588, short col = 0x000F) {
+		int x = 0;
+		int y = r;
+		int p = 3 - 2 * r;
+		if (!r)
+			return;
+
+		while (y >= x) { // only formulate 1/8 of circle
+			Draw(xc - x, yc - y, c, col);//upper left left
+			Draw(xc - y, yc - x, c, col);//upper upper left
+			Draw(xc + y, yc - x, c, col);//upper upper right
+			Draw(xc + x, yc - y, c, col);//upper right right
+			Draw(xc - x, yc + y, c, col);//lower left left
+			Draw(xc - y, yc + x, c, col);//lower lower left
+			Draw(xc + y, yc + x, c, col);//lower lower right
+			Draw(xc + x, yc + y, c, col);//lower right right
+			if (p < 0)
+				p += 4 * (x++) + 6;
+			else
+				p += 4 * ((x++) - (y--)) + 10;
+		}
+	}
+
+	void FillCircle(int xc, int yc, int r, short c = 0x2588, short col = 0x000F) {
+		// Taken from wiki
+		int x = 0;
+		int y = r;
+		int p = 3 - 2 * r;
+		if (!r)
+			return;
+
+		auto drawline = [&](int sx, int ex, int ny) {
+			for (int i = sx; i <= ex; i++)
+				Draw(i, ny, c, col);
+		};
+
+		while (y >= x) {
+			// Modified to draw scan-lines instead of edges
+			drawline(xc - x, xc + x, yc - y);
+			drawline(xc - y, xc + y, yc - x);
+			drawline(xc - x, xc + x, yc + y);
+			drawline(xc - y, xc + y, yc + x);
+			if (p < 0)
+				p += 4 * (x++) + 6;
+			else
+				p += 4 * ((x++) - (y--)) + 16;
+		}
+	}
+
+	void DrawSprite(int x, int y, TemplateSprite* sprite) {
+		if (sprite == nullptr)
+			return;
+
+		for (int i = 0; i < sprite->nWidth; i++)
+			for (int j = 0; j < sprite->nHeight; j++)
+				if (sprite->GetGlyphs(i, j) != L' ')
+					Draw(x + i, y + j, sprite->GetGlyphs(i, j), sprite->GetColour(i, j));
+	}
+
+	void DrawPartialSprite(int x, int y, TemplateSprite* sprite, int ox, int oy, int w, int h) {
+		if (sprite == nullptr)
+			return;
+
+		for (int i = 0; i < w; i++)
+			for (int j = 0; j < h; j++)
+				if (sprite->GetGlyphs(i + ox, j + oy) != L' ')
+					Draw(x + i, y + j, sprite->GetGlyphs(i + ox, j + oy), sprite->GetColour(i + ox, j + oy));
+	}
+
+	void DrawWireFrameModel(const vector<pair<float, float>>& vecModelCoordinates, float x, float y, float r = 0.0f, float s = 1.0f, short col = FG_WHITE) {
+		// pair.first = x coordinate
+		// pair.second = y coordinate
+
+		// Create translated model vector of coordinate pair
+		vector<pair<float, float>> vecTransformedCoordinates;
+		int verts = vecModelCoordinates.size();
+		vecTransformedCoordinates.resize(verts);
+
+		// Rotate
+		for (int i = 0; i < verts; i++) {
+			vecTransformedCoordinates[i].first = vecModelCoordinates[i].first * cosf(r) - vecModelCoordinates[i].second * sinf(r);
+			vecTransformedCoordinates[i].second = vecModelCoordinates[i].first * sinf(r) + vecModelCoordinates[i].second * cosf(r);
+		}
+
+		// Scale
+		for (int i = 0; i < verts; i++) {
+			vecTransformedCoordinates[i].first = vecTransformedCoordinates[i].first * s;
+			vecTransformedCoordinates[i].second = vecTransformedCoordinates[i].second * s;
+		}
+
+		// Translate
+		for (int i = 0; i < verts; i++) {
+			vecTransformedCoordinates[i].first = vecTransformedCoordinates[i].first + x;
+			vecTransformedCoordinates[i].second = vecTransformedCoordinates[i].second + y;
+		}
+
+		// Draw Closed Polygon
+		for (int i = 0; i < verts + 1; i++) {
+			int j = (i + 1);
+			DrawLine((int)vecTransformedCoordinates[i % verts].first, (int)vecTransformedCoordinates[i % verts].second,
+				(int)vecTransformedCoordinates[j % verts].first, (int)vecTransformedCoordinates[j % verts].second, PIXEL_SOLID, col);
 		}
 	}
 
@@ -712,11 +762,15 @@ protected:
 	bool m_mouseOldState[5] = { 0 };
 	bool m_mouseNewState[5] = { 0 };
 	bool m_bConsoleInFocus = true;
+	
+	// These need to be static because of the OnDestroy call the OS may make. The OS
+	// spawns a special thread just for that
 	static atomic<bool> m_bAtomActive;
 	static condition_variable m_cvGameFinished;
 	static mutex m_muxGame;
 };
 
+// Define static variables
 atomic<bool> ConsoleTemplateEngine::m_bAtomActive = false;
 condition_variable ConsoleTemplateEngine::m_cvGameFinished;
 mutex ConsoleTemplateEngine::m_muxGame;
